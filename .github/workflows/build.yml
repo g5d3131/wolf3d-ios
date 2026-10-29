@@ -1,0 +1,123 @@
+
+name: Build Wolf3D iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build.yml"
+      - "wolf3d/**"
+      - "build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version and find project
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          find . -name '*.xcodeproj' -print
+          find . -name '*.xcworkspace' -print
+
+      - name: Find project and scheme
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT=$(find . -name '*.xcodeproj' \
+            -not -path '*/Pods/*' -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "::error::No .xcodeproj found in repository"
+            exit 1
+          fi
+
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+
+          xcodebuild -list -json -project "$PROJECT" \
+            > /tmp/xcode-list.json
+
+          SCHEME=$(python3 -c '
+          import json
+          with open("/tmp/xcode-list.json") as f:
+              data = json.load(f)
+          schemes = data.get("project", {}).get("schemes", [])
+          if not schemes:
+              raise SystemExit("No Xcode schemes found")
+          print(schemes[0])
+          ')
+
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Project: $PROJECT"
+          echo "Scheme: $SCHEME"
+
+      - name: Build unsigned iOS app
+        shell: bash
+        env:
+          PROJECT: ${{ steps.project.outputs.project }}
+          SCHEME: ${{ steps.project.outputs.scheme }}
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$GITHUB_WORKSPACE/build/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package unsigned IPA
+        shell: bash
+        env:
+          SCHEME: ${{ steps.project.outputs.scheme }}
+        run: |
+          set -euo pipefail
+
+          APP_DIR="$GITHUB_WORKSPACE/build/DerivedData/Build/Products/Release-iphoneos"
+          APP="$APP_DIR/$SCHEME.app"
+
+          if [ ! -d "$APP" ]; then
+            echo "::error::App not found: $APP"
+            echo "Available build products:"
+            find "$APP_DIR" -maxdepth 2 -print || true
+            exit 1
+          fi
+
+          if [ ! -f "$APP/Info.plist" ]; then
+            echo "::error::Info.plist missing"
+            exit 1
+          fi
+
+          mkdir -p "$GITHUB_WORKSPACE/dist/Payload"
+          cp -R "$APP" "$GITHUB_WORKSPACE/dist/Payload/"
+
+          cd "$GITHUB_WORKSPACE/dist"
+          /usr/bin/zip -qry Wolf3D-unsigned.ipa Payload
+
+          test -s Wolf3D-unsigned.ipa
+          unzip -l Wolf3D-unsigned.ipa
+          ls -lh Wolf3D-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wolf3D-unsigned-IPA
+          path: dist/Wolf3D-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
