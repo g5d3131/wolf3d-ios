@@ -1,46 +1,25 @@
-
-name: Build Wolf3D iOS
+name: iOS Build
 
 on:
-  workflow_dispatch:
   push:
-    paths:
-      - ".github/workflows/build.yml"
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Find Xcode project
-        run: |
-          find . -name '*.xcodeproj' -o -name '*.xcworkspace'
-
-      - name: Build unsigned app
-        run: |
-          PROJECT=$(find . -name '*.xcodeproj' -print -quit)
-          if [ -z "$PROJECT" ]; then
-            echo "Xcode project not found"
-            exit 1
-          fi
-
-          SCHEME=$(xcodebuild -list -project "$PROJECT" |
-            sed -n '/Schemes:/,$p' |
-            grep -v 'Schemes:' |
-            sed 's/^[[:space:]]*//' |
-            grep -v '^$' | head -1)
-
-          echo "Project: $PROJECT"
-          echo "Scheme: $SCHEME"
-
-          xcodebuild \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+    - name: Build iOS App
+      run: |
+        xcodebuild build \
+          -project wolf3d/wolf3d.xcodeproj \
+          -scheme wolf3d \
+          -sdk iphonesimulator \
+          -configuration Release \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
