@@ -16,7 +16,7 @@ jobs:
     - name: Build iOS App
       run: |
         xcodebuild build \
-          -project wolf3d/wolf3d.xcodeproj \
+          -project wolf3d.xcodeproj \
           -scheme wolf3d \
           -sdk iphonesimulator \
           -configuration Release \
